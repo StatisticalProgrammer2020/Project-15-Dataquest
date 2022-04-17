@@ -1,0 +1,241 @@
+---
+title: "Predicting Car Prices"
+author: "Abe Ceasar Perez"
+date: "April 16, 2022"
+output: html_document
+---
+
+### Creating an Algorithm to Predict Car Prices
+
+This project aims to use machine learning in order to predict car prices. Specifically, we'll be implementing the k-nearest neighbhors algorithm to predict a car's market price based on various car characteristics.
+
+In addition to the objectives above, we'll be applying the following concepts in this project:
+
+- Evaluating Model Performance
+- Multivariate K-Nearest Neighbors
+- Cross Validation
+- Hyperparameter Optimization
+
+### Loading the Packages and the Dataset
+
+We'll start by loading the following packages for our project:
+
+- caret - for loading classification/regresstion functions
+- readr - reading the dataset/formatting data
+- dplyr - loading relevant functions
+- purrr - mapping functions
+- tidyr - cleaning the data
+
+Next, we'll be loading the 1985 Automobile Dataset which can be accessed here: <https://archive.ics.uci.edu/ml/datasets/automobile>. This dataset contains 2015 rows and 26 columns which will be used as features for our algorithm. We'll be loading the comma-separated file and store it in a variable:
+
+```{r cars, echo=TRUE, warning=FALSE}
+
+pacman::p_load("caret","readr","dplyr","purrr","tidyr") # simultaneously loads all relevant packages
+
+set.seed(1) # ensures replicability of the results
+
+imports.85 <- read.csv("imports-85.data", header=FALSE) # data starts with pre-defined headers
+cars <- imports.85
+head(cars)
+
+```
+
+### Selecting our Features
+
+For our next step, we'll be selecting the features that we'll be using for our algorithm. But before that, we'll first be supplying the correct column names since there were no headers present in the loaded dataset:
+
+```{r columns, echo=TRUE, warning=FALSE}
+
+columns <- c("symboling",
+                  "normalized_losses",
+                  "make",
+                  "fuel_type",
+                  "aspiration",
+                  "num_doors",
+                  "body_style",
+                  "drive_wheels",
+                  "engine_location",
+                  "wheel_base",
+                  "length",
+                  "width",
+                  "height",
+                  "curb_weight",
+                  "engine_type",
+                  "num_cylinders",
+                  "engine_size",
+                  "fuel_system",
+                  "bore",
+                  "stroke",
+                  "compression_ratio",
+                  "horsepower",
+                  "peak_rpm",
+                  "city_mpg",
+                  "highway_mpg",
+                  "price")
+colnames(cars) <- columns
+columns # prints all columns
+
+```
+
+Earlier, we've observed that some of the data in our initial viewing is in the form of "?". This indicates that there is no value present in that feature within the observation. To further identify the source of errors, we'll be checking our columns to see how many missing observations are present:
+
+```{r inspect_data, echo=TRUE, warning=FALSE}
+
+missing_data <- t(map_df(cars, function(x) sum(x=="?"))) # counts the number of "?" for each column and changes it into a dataframe
+colnames(missing_data) <- c("No. of Missing Data") # adds a column name for the missing observation count
+
+missing_data
+
+```
+
+Based on the results above, we can see that most of the missing observations came from numerical columns, which are currently encoded into characters. In that case, we'll be simultaneously changing these data types to numeric while eliminating the "?" for each of the features:
+
+```{r parse_cols, echo=TRUE, warning=FALSE}
+
+cleaned_cars <- cars # creates a copy of the dataset for cleaning
+
+# parses the character features into numerical features
+cleaned_cars[,c("normalized_losses","bore","stroke","horsepower","peak_rpm","price")] <- map(cleaned_cars[,c("normalized_losses","bore","stroke","horsepower","peak_rpm","price")], parse_number) 
+
+head(cleaned_cars[,c("normalized_losses","bore","stroke","horsepower","peak_rpm","price")])
+
+```
+
+Now that we've reformatted our features above, we can now select which features we'll be including in our algorithm. Since we'll be using the K-nearest neighbors algorithm, we'll only be selecting numeric-typed columns and remove any missing observations in the dataset:
+
+```{r selected_features, echo=TRUE, warning=FALSE}
+
+cars <- cleaned_cars %>% select(where(is.numeric)) %>% select(-symboling) %>% drop_na() # selects numeric columns, removes symboling which is only considered an id, and drops all missing observations
+
+head(cars) # displays the first few rows of cars
+
+```
+
+To check if our dataset is appropriate for the algorithm, we'll also be checking the data types of our cleaned dataset:
+
+```{r selected_features_cols, echo=TRUE, warning=FALSE}
+
+check_data_types <- t(map_df(cars, typeof)) # creates a dataframe to determine the data types of the cleaned dataset
+colnames(check_data_types) <- c("Data Type") # renames the appropriate column name above
+
+```
+
+### Visualizing the Relationship of Characterstics vs Car Price
+
+Using a feature plot, we'll be plotting the relationship of sale price for each car characterstic. Based on the initial plotting, we've identified characteristics that exhibit a relationship with car sale price:
+
+- Positive Relationship (characteristic increases with sale price): Horsepower, Curb weight, Engine Size, Bore, Wheel Base, Length, Width
+- Negative Relationship (characteristic decreases as sale price)
+
+```{r feature_plot, echo=TRUE, warning=FALSE}
+
+cars <- as.matrix(cars)
+
+# measures all characteristics denoted by x with the car sale price which is denoted by y
+featurePlot(x=cars[,-15], y=cars[,15]) 
+
+```
+
+### Distibution of Car Prices
+
+Lastly, we'll also be checking if all of the car prices have any extreme outliers, we'll be removing these observations from the dataset.
+
+```{r price_dist, echo=TRUE, warning=FALSE}
+
+cars %>% 
+  as_tibble %>% 
+  ggplot(aes(x=price)) + 
+  geom_boxplot() + 
+  labs(title = "Distribution of Car Sale Prices") +
+  theme_bw() # creates a boxplot on car prices
+
+final_cars <- cars %>% as_tibble %>% filter(price < 22000) # creates a revised dataframe without outliers
+head(final_cars) 
+
+```
+
+### Splitting the Dataset
+
+Now that we have a final dataset, we can start creating our training and testing datasets for our model. For this project, we'll consider an 85-15 split where 85% of the data is allocated to the training set while 15% is allocated to the test set.
+
+```{r train_test, echo=TRUE, warning=FALSE}
+
+train_indeces <- createDataPartition(y=final_cars$price,
+                                     p=0.85, list=FALSE) # creates a sample of indeces from 85% of the data
+
+train_cars <- final_cars[train_indeces,] # indexes the sampled train indeces to form the train set
+test_cars <- final_cars[-train_indeces,] # assigns the remaining indeces to the test set
+
+```
+
+Next, we'll be implementing cross-validation and hyperparameter optimization to ensure that our predictions for car prices are accurate:
+
+```{r kfold, echo=TRUE, warning=FALSE}
+
+train_control <- trainControl(method="cv", 10) # for cross-validating our trained model to 10 folds
+knn_grid <- expand.grid(k=1:20) # to find the most optimal hyperparameter / k for our model
+
+```
+
+
+### Training the Model
+
+We'll now start training our model based on the features that we outlined above. After various iterations, we've decided to select the features below since as mentioned in the previous feature plot, these features have a linear relationship between price.
+
+Based on the results below, we were able to obtain a model with an RSquared of over 80% while having low RMSE.
+
+```{r train_cleaned, echo=TRUE, warning=FALSE}
+
+paste("Model features: ",
+      paste(colnames(final_cars)[c(2,3,6,11,13,14,15)], 
+            collapse = ", "),
+      sep="") # prints out the features to be used in the model
+
+# subsets the cleaned data to include only the features and car price
+train_cars_feature <- final_cars[,c(2,3,6,11,13,14,15)] 
+
+model <- train(price~.,
+                 data=train_cars_feature,
+                 method="knn", # fits a knn algorithm
+                 trControl = train_control,
+                 preProcess = c("scale","center"), # normalizes the data to have similar units
+                 tuneGrid = knn_grid) # uses all the possible ks in the knn grid to find the optimum k based on model performance metrics
+model
+
+```
+
+Since we've tested the features above on the cleaned dataset, we'll also be testing if there would be any difference in terms of model evaluation when training on the dataset with outliers:
+
+```{r train_prev, echo=TRUE, warning=FALSE}
+
+paste("Model features: ",
+      paste(colnames(final_cars)[c(2,3,6,11,13,14,15)], 
+            collapse = ", "),
+      sep="") # prints out the features to be used in the model
+
+# subsets the original data to include only the features and car price
+train_cars_features <- train_cars[,c(2,3,6,11,13,14,15)]
+
+model <- train(price~.,
+               data=train_cars_features,
+               method="knn",
+               trControl = train_control,
+               preProcess = c("scale","center"),
+               tuneGrid = knn_grid)
+model
+
+```
+
+### Predicting Car Prices
+
+After we have trained our models, we've decided to move forward with the original dataset given the performance metrics to predict our car prices. Based on our predictions, we were able to predict the car prices from our test set with an 80%+ accuracy.
+
+```{r test_model, echo=TRUE, warning=FALSE}
+
+predictions <- predict(model, newdata=test_cars) # generates test-data predictions using the initial model 
+postResample(predictions, test_cars$price) # measures the efficiency of predictions
+
+```
+
+<br>
+<br>
