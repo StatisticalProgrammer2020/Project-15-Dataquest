@@ -1,7 +1,6 @@
 ---
 title: "Predicting Car Prices"
 author: "Abe Ceasar Perez"
-date: "April 16, 2022"
 output: html_document
 ---
 
@@ -9,7 +8,7 @@ output: html_document
 
 This project aims to use machine learning in order to predict car prices. Specifically, we'll be implementing the k-nearest neighbhors algorithm to predict a car's market price based on various car characteristics.
 
-In addition to the objectives above, we'll be applying the following concepts in this project:
+For this project, the following concepts were applied in order to accomplish the objectives above:
 
 - Evaluating Model Performance
 - Multivariate K-Nearest Neighbors
